@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Simple click event</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.11.1/themes/smoothness/jquery-ui.css" />
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 90%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="dialog-form" title="Add new toll" hidden="hidden">
+        <p class="validateTips">All form fields are required.</p>
+        <form id="form" action="/add" method="POST">
+       <fieldset>
+       <label for="namaTol">Nama Tol</label>
+        <input type="text" name="namaTol" id="namaTol" class="text">
+        <label for="tarif">Tarif</label>
+       <input type="text" name="tarif" id="tarif" value="" class="text">
+       <input type="submit" value="Add">
+      </fieldset>
+      </form>
+    </div>
+    <script
+    src="http://code.jquery.com/jquery-3.3.1.min.js"
+    integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+    crossorigin="anonymous"></script>
+    <script
+  src="http://code.jquery.com/ui/1.12.1/jquery-ui.min.js"
+  integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU="
+  crossorigin="anonymous"></script>
+    <script>
+      var markers = []
+      function initMap() {
+        $("#dialog-form").dialog({
+            autoOpen: false
+        });
+        axios.get('/list_tol')
+        .then(function(response){
+            response.data.tol.map(x => placeMarker(x.nama, {lat: x.location.coordinates[1], lng: x.location.coordinates[0]}));
+        })
+        var myLatlng = {lat: -7.783, lng: 110.367};
+
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 14,
+          center: myLatlng
+        });
+        var pos;
+        google.maps.event.addListener(map, 'click', function(event) {
+            $("#dialog-form").dialog("open");
+            pos = event.latLng;
+        });
+
+        function placeMarker(title, location) {
+            var marker = new google.maps.Marker({
+                position: location, 
+                map: map,
+                title: title
+            });
+        }
+        var lastPosition;
+        function trackMarker(title, location) {
+            var marker = new google.maps.Marker({
+                position: location, 
+                map: map,
+                title: title
+            });
+            lastPosition = marker;
+        }
+
+        $("#form").submit(function(e){
+            e.preventDefault();
+            let data = {
+                namaTol: $("#namaTol").val(),
+                tarif: $("#tarif").val(),
+                lokasi: pos
+            }
+            console.log(data);
+            axios.post('/add', data)
+            .then(function (response) {
+                placeMarker(response.data.namaTol, pos);
+            })
+            .catch(function (error) {
+                alert(error.response.data);
+            });
+        });
+
+        
+        const socket = io();
+        socket.on('track', function(data){
+            if(lastPosition){
+                lastPosition.setMap(null);
+            }
+            trackMarker(data.kendaraan.nopol, { lat: Number(data.lokasi.lat), lng: Number(data.lokasi.lng) });
+        });
+        socket.on('report', function(data){
+            if(data.event == 'masuk'){
+                alert('Kendaraan dengan nopol '+data.kendaraan.nopol+' melewati gerbang '+ data.gerbang.nama);
+            }
+            else if(data.event == 'keluar'){
+                alert('Kendaraan dengan nopol '+data.kendaraan.nopol+' keluar gerbang '+ data.gerbang.nama);
+            }
+        })
+      }
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBcIsmtqa1bTPNqoiMzpFOBN3BiHnsQue8&callback=initMap">
+    </script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+  </body>
+</html>

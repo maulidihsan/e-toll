@@ -1,0 +1,88 @@
+<html>
+<head>
+<title> TEST </title>
+<style>
+    /* Always set the map height explicitly to define the size of the div
+     * element that contains the map. */
+    #map {
+      height: 70%;
+    }
+    /* Optional: Makes the sample page fill the window. */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBcIsmtqa1bTPNqoiMzpFOBN3BiHnsQue8&callback=initMap">
+    </script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    function initMap() {
+        var socket = io.connect();
+        socket.on('connect', function(data) {
+        socket.emit('locate', {
+            kendaraan: {
+                nopol: "AB AB",
+                jenis: "SUV"
+            },
+            lokasi: {
+                lat: "-7.78",
+                lng: "110"
+            }});
+        });
+        socket.on('notify', function(data){
+            console.log(data);
+        });
+        var myLatlng = {lat: -7.783, lng: 110.367};
+
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 14,
+          center: myLatlng
+        });
+
+        google.maps.event.addListener(map, 'click', function(event) {      
+            socket.emit('locate', {
+            kendaraan: {
+                nopol: "AB AB",
+                jenis: "SUV"
+            },
+            lokasi: event.latLng});
+            socket.emit('bayar', 'hei', (data) => {
+                alert(data);
+            })
+        });
+
+        function placeMarker(title, location) {
+            var marker = new google.maps.Marker({
+                position: location, 
+                map: map,
+                title: title
+            });
+        }
+        var lastPosition;
+        function trackMarker(title, location) {
+            var marker = new google.maps.Marker({
+                position: location, 
+                map: map,
+                title: title
+            });
+            lastPosition = marker;
+        }
+        socket.on('track', function(data){
+            if(lastPosition){
+                lastPosition.setMap(null);
+            }
+            trackMarker(data.kendaraan.nopol, { lat: Number(data.lokasi.lat), lng: Number(data.lokasi.lng) });
+        });
+      }
+</script>
+<script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBcIsmtqa1bTPNqoiMzpFOBN3BiHnsQue8&callback=initMap">
+    </script>
+</body>
+<html>
