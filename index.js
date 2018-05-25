@@ -10,7 +10,14 @@ let db;
 MongoClient.connect('mongodb://tester:s3cur3pwdd@127.0.0.1:27017/?ssl=false&authSource=test', function(err, _db){
     db = _db.db('etoll');
     db.collection('gate').createIndex({ location: '2dsphere'}, { unique: true });
-    console.log('db for socket connected');
+    db.collection('kendaraan').replaceOne(
+      { card_id : "3c695714817a003382b0b0023830323832303034" },
+      { card_id: "3c695714817a003382b0b0023830323832303034", nopol: "AB 987 XYZ", jenis: "Semi Truck" },
+      { upsert: true }, (err, data) => {
+        if(err){
+            console.log(err);
+        }
+      });
 });
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
@@ -42,6 +49,9 @@ app.get('/report', (req, res, next) => {
 })
 app.get('/add', (req, res, next) => {
     res.sendFile(__dirname + '/add.html');
+});
+app.get('/kendaraan', (req, res, next) => {
+    res.sendFile(__dirname + '/kendaraan.html');
 });
 app.get('/rfid_reader', (req, res, next) => {
     if(req.query.gate && req.query.card) {
@@ -140,7 +150,15 @@ app.post('/add', (req, res, next) => {
     })
 });
 
-
+app.post('/add_kendaraan', (req, res, next) => {
+    db.collection('kendaraan').insertOne({ card_id: req.body.cardId, nopol: req.body.nopol, jenis: req.body.jenis}, (err, data) => {
+        if(err){
+            res.send(false);
+        } else {
+            res.send(true);
+        }
+    });
+});
 
 // SOCKET EVENT AND LOGIC
 io.on('connection', function(client) {  
