@@ -55,11 +55,11 @@
             });
         }
         var lastPosition;
-        function trackMarker(title, location) {
+        function trackMarker(location) {
             var marker = new google.maps.Marker({
                 position: location, 
                 map: map,
-                title: title,
+                title: 'Kendaraan',
                 icon: carIcon
             });
             lastPosition = marker;
@@ -71,7 +71,7 @@
             if(lastPosition){
                 lastPosition.setMap(null);
             }
-            trackMarker(data.kendaraan.nopol, { lat: Number(data.lokasi.lat), lng: Number(data.lokasi.lng) });
+            trackMarker({ lat: Number(data.lokasi.lat), lng: Number(data.lokasi.lng) });
         });
         socket.on('report', function(data){
             if(data.event == 'masuk'){

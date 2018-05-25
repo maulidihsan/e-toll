@@ -9,6 +9,7 @@ const  ObjectId = require('mongodb').ObjectId;
 let db;
 MongoClient.connect('mongodb://tester:s3cur3pwdd@127.0.0.1:27017/?ssl=false&authSource=test', function(err, _db){
     db = _db.db('etoll');
+    db.collection('gate').createIndex({ location: '2dsphere'}, { unique: true });
     console.log('db for socket connected');
 });
 app.use(bodyParser.json())
@@ -44,6 +45,8 @@ app.get('/add', (req, res, next) => {
 });
 app.get('/rfid_reader', (req, res, next) => {
     if(req.query.gate && req.query.card) {
+        console.log('gate: ', req.query.gate);
+        console.log('card: ', req.query.card);
         db.collection('gate').findOne(
         {
             _id: ObjectId(req.query.gate)
@@ -52,52 +55,58 @@ app.get('/rfid_reader', (req, res, next) => {
                 res.send(false)
             }
             else {
-                db.collection('kendaraan').findOne({ _id: ObjectId(req.body.card) }, function( err, kendaraan){
+                console.log('gate: ',gate);
+                db.collection('kendaraan').findOne({ card_id: req.query.card }, function( err, kendaraan){
                     if(err || !kendaraan){
                         res.send(false)
                     }
                     else {
-                        let query = {
-                            nopol: kendaraan.nopol,
-                            jenis: kendaraan.jenis
-                        }
-                        db.collection('log').find({ kendaraan: query }).sort({ waktu_masuk: -1 }).limit(1).toArray(function(err, log) {
+                        console.log('kendaraan: ', kendaraan);
+                        db.collection('log').find({ kendaraan: kendaraan }).sort({ waktu_masuk: -1 }).limit(1).toArray(function(err, log) {
                             if(!err){
+                                console.log('log: ', log);
                                 if (log.length < 1 || (log[0].gerbang_masuk && log[0].gerbang_keluar)) {
                                     const dataToInsert = {
-                                        kendaraan: query,
-                                        tarif: gate[0].tarif,
-                                        gerbang_masuk: gate[0],
+                                        kendaraan: kendaraan,
+                                        tarif: gate.tarif,
+                                        gerbang_masuk: gate,
                                         waktu_masuk: Date.now(),
                                     }
                                     db.collection('log').insertOne(dataToInsert, function(err, result){
                                         if(!err) {
+                                            console.log('success: ', result);
                                             io.sockets.emit('report', {
                                                 event: 'masuk',
-                                                kendaraan: query,
-                                                gerbang: gate[0],
+                                                kendaraan: kendaraan,
+                                                gerbang: gate,
                                                 ts: Date.now()
                                             });
-                                            client.emit('notify', {
+                                            io.sockets.emit('track', {
+                                                lokasi: {
+                                                    lat: gate.location.coordinates[1],
+                                                    lng: gate.location.coordinates[0],
+                                                }
+                                            });
+                                            io.sockets.emit('notify', {
                                                 event: 'masuk',
-                                                kendaraan: query,
-                                                gerbang: gate[0],
+                                                kendaraan: kendaraan,
+                                                gerbang: gate,
                                             })
                                         }
                                     })
-                                } else if(log[0].gerbang_masuk && !log[0].gerbang_keluar && !_.isEqual(log[0].gerbang_masuk, gate[0])){
-                                    db.collection('log').findAndModify({ kendaraan: query }, {waktu_masuk: -1}, { $set: { gerbang_keluar: gate[0], waktu_keluar: Date.now()}}, { $upsert: false }, function(err, result){
+                                } else if(log[0].gerbang_masuk && !log[0].gerbang_keluar && !_.isEqual(log[0].gerbang_masuk, gate)){
+                                    db.collection('log').findAndModify({ kendaraan: kendaraan }, {waktu_masuk: -1}, { $set: { gerbang_keluar: gate, waktu_keluar: Date.now()}}, { $upsert: false }, function(err, result){
                                         if(!err) {
                                             io.sockets.emit('report', {
                                                 event: 'keluar',
-                                                kendaraan: query,
-                                                gerbang: gate[0],
+                                                kendaraan: kendaraan,
+                                                gerbang: gate,
                                                 ts: Date.now()
                                             });
-                                            client.emit('notify', {
+                                            io.sockets.emit('notify', {
                                                 event: 'keluar',
-                                                kendaraan: query,
-                                                gerbang: gate[0],
+                                                kendaraan: kendaraan,
+                                                gerbang: gate,
                                             })
                                         }
                                     })
@@ -137,6 +146,7 @@ app.post('/add', (req, res, next) => {
 io.on('connection', function(client) {  
     console.log('Client connected...');
     client.on('locate', function(data){
+        console.log(data);
         io.sockets.emit('track', data);
         let coordinates = [];
         coordinates[0] = Number(data.lokasi.lng);
@@ -155,49 +165,56 @@ io.on('connection', function(client) {
             if(err) {console.log(err);}
             console.log(gate);
             if(gate.length > 0){
-                db.collection('log').find({ kendaraan: data.kendaraan }).sort({ waktu_masuk: -1 }).limit(1).toArray(function(err, log) {
-                    console.log(log);
-                    if(!err){
-                        console.log(log);
-                        if (log.length < 1 || (log[0].gerbang_masuk && log[0].gerbang_keluar)) {
-                            const dataToInsert = {
-                                kendaraan: data.kendaraan,
-                                tarif: gate[0].tarif,
-                                gerbang_masuk: gate[0],
-                                waktu_masuk: Date.now(),
+                db.collection('kendaraan').findOne({ card_id: data.card }, function( err, kendaraan){
+                    if(err || !kendaraan){
+                        res.send(false)
+                    }
+                    else {
+                        db.collection('log').find({ kendaraan: kendaraan }).sort({ waktu_masuk: -1 }).limit(1).toArray(function(err, log) {
+                            console.log(log);
+                            if(!err){
+                                console.log(log);
+                                if (log.length < 1 || (log[0].gerbang_masuk && log[0].gerbang_keluar)) {
+                                    const dataToInsert = {
+                                        kendaraan: kendaraan,
+                                        tarif: gate[0].tarif,
+                                        gerbang_masuk: gate[0],
+                                        waktu_masuk: Date.now(),
+                                    }
+                                    db.collection('log').insertOne(dataToInsert, function(err, result){
+                                        if(!err) {
+                                            io.sockets.emit('report', {
+                                                event: 'masuk',
+                                                kendaraan: kendaraan,
+                                                gerbang: gate[0],
+                                                ts: Date.now()
+                                            });
+                                            client.emit('notify', {
+                                                event: 'masuk',
+                                                kendaraan: kendaraan,
+                                                gerbang: gate[0],
+                                            })
+                                        }
+                                    })
+                                } else if(log[0].gerbang_masuk && !log[0].gerbang_keluar && !_.isEqual(log[0].gerbang_masuk, gate[0])){
+                                    db.collection('log').findAndModify({ kendaraan: kendaraan }, {waktu_masuk: -1}, { $set: { gerbang_keluar: gate[0], waktu_keluar: Date.now()}}, { $upsert: false }, function(err, result){
+                                        if(!err) {
+                                            io.sockets.emit('report', {
+                                                event: 'keluar',
+                                                kendaraan: kendaraan,
+                                                gerbang: gate[0],
+                                                ts: Date.now()
+                                            });
+                                            client.emit('notify', {
+                                                event: 'keluar',
+                                                kendaraan: kendaraan,
+                                                gerbang: gate[0],
+                                            })
+                                        }
+                                    })
+                                }
                             }
-                            db.collection('log').insertOne(dataToInsert, function(err, result){
-                                if(!err) {
-                                    io.sockets.emit('report', {
-                                        event: 'masuk',
-                                        kendaraan: data.kendaraan,
-                                        gerbang: gate[0],
-                                        ts: Date.now()
-                                    });
-                                    client.emit('notify', {
-                                        event: 'masuk',
-                                        kendaraan: data.kendaraan,
-                                        gerbang: gate[0],
-                                    })
-                                }
-                            })
-                        } else if(log[0].gerbang_masuk && !log[0].gerbang_keluar && !_.isEqual(log[0].gerbang_masuk, gate[0])){
-                            db.collection('log').findAndModify({ kendaraan: data.kendaraan }, {waktu_masuk: -1}, { $set: { gerbang_keluar: gate[0], waktu_keluar: Date.now()}}, { $upsert: false }, function(err, result){
-                                if(!err) {
-                                    io.sockets.emit('report', {
-                                        event: 'keluar',
-                                        kendaraan: data.kendaraan,
-                                        gerbang: gate[0],
-                                        ts: Date.now()
-                                    });
-                                    client.emit('notify', {
-                                        event: 'keluar',
-                                        kendaraan: data.kendaraan,
-                                        gerbang: gate[0],
-                                    })
-                                }
-                            })
-                        }
+                        });
                     }
                 });
             }
